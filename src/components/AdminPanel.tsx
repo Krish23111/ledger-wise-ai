@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Users, TrendingUp, FileText, Settings } from 'lucide-react';
 
 const AdminPanel = () => {
-  const { user, logout } = useAuth();
+  const { profile, logout } = useAuth();
   const [searchUser, setSearchUser] = useState('');
 
   const mockUsers = [
@@ -58,7 +58,7 @@ const AdminPanel = () => {
             </div>
             <div className="flex items-center space-x-4">
               <Badge variant="secondary">Admin</Badge>
-              <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
+              <span className="text-sm text-gray-600">Welcome, {profile?.name}</span>
               <Button variant="outline" size="sm" onClick={logout}>
                 Logout
               </Button>
