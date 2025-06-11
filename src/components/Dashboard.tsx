@@ -10,7 +10,7 @@ import Chatbot from './Chatbot';
 import AdminPanel from './AdminPanel';
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
 
   const mockStats = {
@@ -27,7 +27,7 @@ const Dashboard = () => {
     { id: 3, date: '2024-06-08', vendor: 'Client ABC', amount: 50000, gst: 9000, type: 'income', category: 'Consulting' }
   ];
 
-  if (user?.role === 'admin') {
+  if (profile?.role === 'admin') {
     return <AdminPanel />;
   }
 
@@ -46,7 +46,7 @@ const Dashboard = () => {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
+              <span className="text-sm text-gray-600">Welcome, {profile?.name || user?.email}</span>
               <Button variant="outline" size="sm" onClick={logout}>
                 Logout
               </Button>

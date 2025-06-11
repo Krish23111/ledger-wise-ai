@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,20 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from './AuthProvider';
+
+interface Category {
+  id: string;
+  name: string;
+  description: string | null;
+}
 
 const TransactionForm = () => {
+  const { user } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     vendor: '',
@@ -19,45 +31,98 @@ const TransactionForm = () => {
     description: ''
   });
 
-  const categories = [
-    'Software Development',
-    'Consulting',
-    'Office Supplies',
-    'Travel & Transport',
-    'Marketing & Advertising',
-    'Professional Services',
-    'Equipment & Software',
-    'Utilities',
-    'Other'
-  ];
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name, description')
+        .order('name');
+
+      if (error) {
+        console.error('Error fetching categories:', error);
+        return;
+      }
+
+      setCategories(data || []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const gstAmount = (parseFloat(formData.amount) * parseFloat(formData.gstRate)) / 100;
-    const totalAmount = parseFloat(formData.amount) + gstAmount;
-    
-    console.log('Transaction submitted:', {
-      ...formData,
-      gstAmount,
-      totalAmount
-    });
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to add transactions.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    toast({
-      title: "Transaction Added!",
-      description: `Successfully added ${formData.type} of ₹${totalAmount.toLocaleString()} (including ₹${gstAmount.toFixed(2)} GST)`,
-    });
+    setIsSubmitting(true);
 
-    // Reset form
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      vendor: '',
-      amount: '',
-      gstRate: '18',
-      category: '',
-      type: '',
-      description: ''
-    });
+    try {
+      const baseAmount = parseFloat(formData.amount);
+      const gstRate = parseFloat(formData.gstRate);
+      const gstAmount = (baseAmount * gstRate) / 100;
+      const totalAmount = baseAmount + gstAmount;
+
+      const { error } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user.id,
+          date: formData.date,
+          vendor: formData.vendor,
+          amount: baseAmount,
+          gst_rate: gstRate,
+          gst_amount: gstAmount,
+          total_amount: totalAmount,
+          type: formData.type,
+          category_id: formData.category || null,
+          description: formData.description || null
+        });
+
+      if (error) {
+        console.error('Error saving transaction:', error);
+        toast({
+          title: "Error",
+          description: "Failed to save transaction. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Transaction Added!",
+        description: `Successfully added ${formData.type} of ₹${totalAmount.toLocaleString()} (including ₹${gstAmount.toFixed(2)} GST)`,
+      });
+
+      // Reset form
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        vendor: '',
+        amount: '',
+        gstRate: '18',
+        category: '',
+        type: '',
+        description: ''
+      });
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save transaction. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const gstAmount = formData.amount ? (parseFloat(formData.amount) * parseFloat(formData.gstRate)) / 100 : 0;
@@ -123,6 +188,7 @@ const TransactionForm = () => {
                 id="amount"
                 type="number"
                 placeholder="0.00"
+                step="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 required
@@ -155,8 +221,8 @@ const TransactionForm = () => {
               </SelectTrigger>
               <SelectContent>
                 {categories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -198,9 +264,9 @@ const TransactionForm = () => {
           <Button 
             type="submit" 
             className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 transition-all duration-300"
-            disabled={!formData.vendor || !formData.amount || !formData.type || !formData.category}
+            disabled={!formData.vendor || !formData.amount || !formData.type || isSubmitting}
           >
-            Add Transaction
+            {isSubmitting ? 'Adding Transaction...' : 'Add Transaction'}
           </Button>
         </form>
       </CardContent>

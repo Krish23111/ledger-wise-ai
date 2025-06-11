@@ -1,15 +1,18 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from "@/integrations/supabase/client";
+import type { User } from '@supabase/supabase-js';
 
-interface User {
+interface Profile {
   id: string;
   email: string;
-  role: 'user' | 'admin';
   name: string;
+  role: 'user' | 'admin';
 }
 
 interface AuthContextType {
   user: User | null;
+  profile: Profile | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   register: (email: string, password: string, name: string) => Promise<boolean>;
@@ -20,36 +23,74 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored user session
-    const storedUser = localStorage.getItem('smartledger_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
+      setIsLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        await fetchProfile(session.user.id);
+      } else {
+        setProfile(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+
+      setProfile(data);
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    }
+  };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      // Mock login - in production, this would connect to Supabase
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock user data
-      const userData: User = {
-        id: Math.random().toString(36),
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        role: email.includes('admin') ? 'admin' : 'user',
-        name: email.split('@')[0]
-      };
-      
-      setUser(userData);
-      localStorage.setItem('smartledger_user', JSON.stringify(userData));
+        password,
+      });
+
+      if (error) {
+        console.error('Login error:', error);
+        setIsLoading(false);
+        return false;
+      }
+
+      setUser(data.user);
+      if (data.user) {
+        await fetchProfile(data.user.id);
+      }
       setIsLoading(false);
       return true;
     } catch (error) {
+      console.error('Login error:', error);
       setIsLoading(false);
       return false;
     }
@@ -58,32 +99,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (email: string, password: string, name: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const userData: User = {
-        id: Math.random().toString(36),
+      const { data, error } = await supabase.auth.signUp({
         email,
-        role: 'user',
-        name
-      };
-      
-      setUser(userData);
-      localStorage.setItem('smartledger_user', JSON.stringify(userData));
+        password,
+        options: {
+          data: {
+            name,
+          }
+        }
+      });
+
+      if (error) {
+        console.error('Registration error:', error);
+        setIsLoading(false);
+        return false;
+      }
+
+      setUser(data.user);
+      if (data.user) {
+        await fetchProfile(data.user.id);
+      }
       setIsLoading(false);
       return true;
     } catch (error) {
+      console.error('Registration error:', error);
       setIsLoading(false);
       return false;
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('smartledger_user');
+    setProfile(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, register, isLoading }}>
+    <AuthContext.Provider value={{ user, profile, login, logout, register, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
